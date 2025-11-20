@@ -1,0 +1,74 @@
+name: 京东签到领京豆
+
+on:
+  # 手动触发
+  workflow_dispatch:
+  # 定时触发（UTC时间，北京时间需+8小时）
+  schedule:
+    - cron: '0 0,12 * * *'  # 北京时间8点、20点各执行一次
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 设置Python环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+
+      - name: 执行签到脚本
+        env:
+          JD_COOKIE: ${{ secrets.JD_COOKIE }}
+        run: |
+          cat > jd_sign.py << 'EOF'
+          import requests
+          import os
+          import json
+
+          # 获取Cookie
+          cookie = os.getenv("JD_COOKIE")
+          if not cookie:
+              print("未配置JD_COOKIE！")
+              exit(1)
+
+          # 签到接口
+          url = "https://api.m.jd.com/client.action?functionId=signBeanAct"
+          headers = {
+              "Cookie": cookie,
+              "User-Agent": "jdapp;iPhone;9.4.4;14.0;network/4g;Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148;supportJDSHWK/1",
+              "Referer": "https://bean.m.jd.com/"
+          }
+          data = {
+              "body": "{}",
+              "clientVersion": "9.4.4",
+              "client": "apple",
+              "uuid": "your-uuid-here",
+              "st": "",
+              "sign": "",
+              "sv": "111"
+          }
+
+          try:
+              response = requests.post(url, headers=headers, data=data)
+              result = json.loads(response.text)
+              print(f"签到结果：{result.get('message', '未知')}")
+              
+              # 领取额外京豆任务
+              task_url = "https://api.m.jd.com/client.action?functionId=beanTaskDetail"
+              task_response = requests.post(task_url, headers=headers, data=data)
+              task_result = json.loads(task_response.text)
+              print(f"任务状态：{task_result.get('message', '未知')}")
+              
+          except Exception as e:
+              print(f"签到失败：{str(e)}")
+          EOF
+          
+          python jd_sign.py
